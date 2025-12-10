@@ -1,6 +1,6 @@
 # NetMonRS
 
-NetMonRS is a real-time network connection monitor for Linux systems, written in Rust. It provides a terminal-based interface to track active network connections and connection history for a specified process.
+NetMonRS is a real-time network connection monitor for *nix systems, written in Rust. It provides a terminal-based interface to track active network connections and connection history for a specified process.
 
 ## Features
 
