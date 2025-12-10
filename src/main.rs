@@ -107,6 +107,24 @@ impl App {
             Focus::HistoryList => Focus::ActiveList,
         };
     }
+
+    fn update_seen_ips(&mut self) {
+        let mut seen_ips = HashSet::new();
+        let history_to_check = if self.history_log.len() > 1000 {
+            &self.history_log[self.history_log.len() - 1000..]
+        } else {
+            &self.history_log
+        };
+
+        for h in history_to_check {
+             if let Some(ip) = h.split_whitespace().last() {
+                 if !ip.is_empty() {
+                     seen_ips.insert(ip.to_string());
+                 }
+             }
+        }
+        self.seen_ips = seen_ips;
+    }
 }
 
 
@@ -247,19 +265,7 @@ fn run_app(terminal: &mut Stdout, target: String) -> io::Result<()> {
                     for entry in new_history_entries {
                         app.history_log.push(entry);
                     }
-                    let mut seen_ips = HashSet::new();
-                    let history_to_check = if app.history_log.len() > 1000 {
-                        &app.history_log[app.history_log.len() - 1000..]
-                    } else {
-                        &app.history_log
-                    };
-
-                    for h in history_to_check {
-                         if let Some(ip) = h.split_whitespace().last() {
-                             seen_ips.insert(ip.to_string());
-                         }
-                    }
-                    app.seen_ips = seen_ips;
+                    app.update_seen_ips();
                 }
                 BackgroundEvent::Error(msg) => {
                     app.last_status_msg = msg;
@@ -336,4 +342,86 @@ fn ui(f: &mut Frame, app: &mut App) {
         .style(status_style);
 
     f.render_widget(status_bar, main_chunks[1]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_seen_ips_empty_history() {
+        let mut app = App::new(String::from("test"));
+        app.update_seen_ips();
+        assert!(app.seen_ips.is_empty());
+    }
+
+    #[test]
+    fn test_update_seen_ips_single_entry() {
+        let mut app = App::new(String::from("test"));
+        app.history_log.push("[12:00:00] 192.168.1.1".to_string());
+        app.update_seen_ips();
+        assert!(app.seen_ips.contains("192.168.1.1"));
+        assert_eq!(app.seen_ips.len(), 1);
+    }
+
+    #[test]
+    fn test_update_seen_ips_multiple_entries() {
+        let mut app = App::new(String::from("test"));
+        app.history_log.push("[12:00:00] 192.168.1.1".to_string());
+        app.history_log.push("[12:00:01] 10.0.0.1".to_string());
+        app.history_log.push("[12:00:02] 172.16.0.1".to_string());
+        app.update_seen_ips();
+        assert!(app.seen_ips.contains("192.168.1.1"));
+        assert!(app.seen_ips.contains("10.0.0.1"));
+        assert!(app.seen_ips.contains("172.16.0.1"));
+        assert_eq!(app.seen_ips.len(), 3);
+    }
+
+    #[test]
+    fn test_update_seen_ips_duplicate_ips() {
+        let mut app = App::new(String::from("test"));
+        app.history_log.push("[12:00:00] 192.168.1.1".to_string());
+        app.history_log.push("[12:00:01] 192.168.1.1".to_string());
+        app.history_log.push("[12:00:02] 10.0.0.1".to_string());
+        app.update_seen_ips();
+        assert!(app.seen_ips.contains("192.168.1.1"));
+        assert!(app.seen_ips.contains("10.0.0.1"));
+        assert_eq!(app.seen_ips.len(), 2);
+    }
+
+    #[test]
+    fn test_update_seen_ips_ipv6() {
+        let mut app = App::new(String::from("test"));
+        app.history_log.push("[12:00:00] 2001:db8::1".to_string());
+        app.history_log.push("[12:00:01] [::1]".to_string());
+        app.update_seen_ips();
+        assert!(app.seen_ips.contains("2001:db8::1"));
+        assert!(app.seen_ips.contains("[::1]"));
+        assert_eq!(app.seen_ips.len(), 2);
+    }
+
+    #[test]
+    fn test_update_seen_ips_limited_history() {
+        let mut app = App::new(String::from("test"));
+        for i in 0..1001 {
+            app.history_log.push(format!("[12:00:{:02}] 192.168.1.{}", i, i));
+        }
+        app.update_seen_ips();
+        assert_eq!(app.seen_ips.len(), 1000);
+        assert!(!app.seen_ips.contains("192.168.1.0"));
+        assert!(app.seen_ips.contains("192.168.1.1000"));
+    }
+
+
+
+    #[test]
+    fn test_update_seen_ips_complex_format() {
+        let mut app = App::new(String::from("test"));
+        app.history_log.push("[12:00:00] 192.168.1.1:80".to_string());
+        app.history_log.push("[12:00:01] 10.0.0.1:443".to_string());
+        app.update_seen_ips();
+        assert!(app.seen_ips.contains("192.168.1.1:80"));
+        assert!(app.seen_ips.contains("10.0.0.1:443"));
+        assert_eq!(app.seen_ips.len(), 2);
+    }
 }
